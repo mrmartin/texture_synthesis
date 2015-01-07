@@ -7,7 +7,7 @@ ifeq ($(UNAME_S),Darwin)
 endif
 	
 test: myexample.bin
-	./myexample.bin
+	./myexample.bin lena.png
 
 myexample.bin: myexample.cpp CImg GridCut
 	g++ myexample.cpp -o myexample.bin $(CCFLAGS) -I./GridCut/include
@@ -17,6 +17,7 @@ GridCut:
 
 ex1: GridCut
 	g++ GridCut/examples/ex1-basic/ex1-basic.cpp -o ex1.bin -I./GridCut/include
+	./ex1.bin
 
 ex2: GridCut
 	g++ GridCut/examples/ex2-segmentation/ex2-segmentation.cpp -o ex2.bin -I./GridCut/include
