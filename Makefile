@@ -7,7 +7,7 @@ ifeq ($(UNAME_S),Darwin)
 endif
 	
 test: myexample.bin
-	./myexample.bin lena.png
+	./myexample.bin cohen03_in.jpg #~/Datasets/Textures/numbers.jpg
 
 myexample.bin: myexample.cpp CImg GridCut
 	g++ myexample.cpp -o myexample.bin $(CCFLAGS) -I./GridCut/include
