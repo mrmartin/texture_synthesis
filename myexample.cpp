@@ -179,8 +179,7 @@ class SubImage {
 			return false;
 		}
 		printf("repeatable texture rendering will have overlap %d, but the overlap over the edge will be different!\n",overlap);
-		//the proper way to implement this would be to rewrite fit_on such that it accesses the image modulo size. However, I'm going to make my life easier, by rendering the texture on a larger image, and pasting the top to the bottom and the left to the right
-		SubImage larger(w+overlap*2,h+overlap*2);
+		//it was actually much easier to do it properly with the overlaps, than it was to fix the bugs of the other method
 		//for each collumn
 		for (int y=0;y<h;y+=patch.h-overlap){
 			int y_offset=0;
@@ -197,7 +196,7 @@ class SubImage {
 				patch = SubImage(passed_image,patch_size);
 				SubImage best_patch = patch;
 				double best_cost=DBL_MAX;
-				double this_cost=larger.get_cut_cost(patch,x+x_offset,y+y_offset);
+				double this_cost=get_cut_cost_overflow(patch,x+x_offset,y+y_offset);
 				int counter = max_itterations;
 				
 				while(best_cost>cutoff_cost && counter>0){
@@ -207,22 +206,17 @@ class SubImage {
 						best_cost = this_cost;
 					}else{
 						patch = SubImage(passed_image,patch_size);
-						this_cost=larger.get_cut_cost(patch,x+x_offset,y+y_offset);
+						this_cost=get_cut_cost_overflow(patch,x+x_offset,y+y_offset);
 					}
 				}
 				printf("best flow is %f\n",best_cost);
 					
-				larger.fit_on(best_patch,x+x_offset,y+y_offset);
-				//fit_on(patch,x+x_offset,y+y_offset);
-				if(x<overlap && y<overlap)
-					larger.paste_subimage(larger,w,h,0,0,overlap*2,overlap*2);
-				if(x<overlap)
-					larger.paste_subimage(larger,w,y,0,y,overlap*2,min(y+patch.h,h));
-				if(y<overlap)
-					larger.paste_subimage(larger,x,h,x,0,min(x+patch.w,w),overlap*2);
+				fit_on_overflow(best_patch,x+x_offset,y+y_offset);
+				
+				save("output.png");
+				//system("read");
 			}
 		}
-		paste_subimage(larger,0,0,overlap,overlap,w+overlap,h+overlap);
 	}
 	
 	bool is_known(int x, int y){
@@ -261,13 +255,14 @@ class SubImage {
 	}
 	bool set_cut_cost(int x, int y, double cost){
 		if(x<0 || y<0 || x>=w || y>=h){
-			printf("setting known array outside subImage\n");
+			printf("setting cut cost array outside subImage\n");
 			return false;
 		}else{
 			cut_cost_mask[x*h+y]=cost;
 			return true;
 		}
 	}
+	
 	unsigned char get(int x, int y, int c){
 		if(x<0 || x>=w || y<0 || y>=h || c<0 || c>2){
 			printf("getting information outside of SubImage");
@@ -283,6 +278,61 @@ class SubImage {
 		}else{
 			set_known(x,y);
 			(*image)(x1+x, y1+y, 0, c)=v;
+			return true;
+		}
+	}
+	double get_cut_cost_overflow(int x, int y){
+		if(x<0 || y<0){
+			//printf("checking known array at %d, %d for subImage of size %d, %d\n",x,y,w,h);
+			return false;
+		}else{
+			return cut_cost_mask[(x%w)*h+(y%h)];
+		}
+	}
+	bool set_cut_cost_overflow(int x, int y, double cost){
+		if(x<0 || y<0){
+			//printf("setting cut cost array outside subImage\n");
+			//don't allow negatives
+			return false;
+		}else{
+			cut_cost_mask[(x%w)*h+(y%h)]=cost;
+			return true;
+		}
+	}
+	unsigned char get_overflow(int x, int y, int c){
+		if(x<0 || y<0 || c<0 || c>2){
+			printf("getting information outside of SubImage");
+			return 0;
+		}else{
+			return (*image)(x1+x%w,y1+y%h,0,c);
+		}
+	}
+	bool set_overflow(int x, int y, int c, unsigned char v){
+		if(x<0 || y<0 || c<0 || c>2){
+			printf("setting information below 0 of SubImage");
+			return false;
+		}else{
+			set_known_overflow(x,y);
+			(*image)(x1+x%w, y1+y%h, 0, c)=v;
+			return true;
+		}
+	}
+	bool is_known_overflow(int x, int y){
+		if(x<0 || y<0){
+			//printf("checking known array at %d, %d for subImage of size %d, %d\n",x,y,w,h);
+			//don't allow checking below 0
+			return false;
+		}else{
+			return known_mask[(x%w)*h+(y%h)];
+		}
+	}
+	bool set_known_overflow(int x, int y){
+		if(x<0 || y<0){
+			//printf("setting known array outside subImage\n");
+			//don't allow to set negative values
+			return false;
+		}else{
+			known_mask[(x%w)*h+(y%h)]=true;
 			return true;
 		}
 	}
@@ -424,12 +474,12 @@ class SubImage {
 					pixel_cut_cost+=get_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,x,y,0,+1);
 				}
 				set_cut_cost(x+min_x_i-1,y+min_y_i-1,pixel_cut_cost);
-				//if(get_cut_cost(x+min_x_i-1,y+min_y_i-1)==0)
-				//	printf("    ");
-				//else
-				//	printf("%.1f ",get_cut_cost(x+min_x_i-1,y+min_y_i-1));
+				if(get_cut_cost(x+min_x_i-1,y+min_y_i-1)==0)
+						printf("    ");
+				else
+						printf("%.1f ",get_cut_cost(x+min_x_i-1,y+min_y_i-1));
 			}
-			//printf("\n");
+			printf("|\n");
 		}
 		length=length/2;
 		printf("The used max flow is %f, for a cut of length %d\n",max_flow, length);
@@ -455,7 +505,126 @@ class SubImage {
 
 		return true;
 	}
+	
+	bool fit_on_overflow(SubImage patch, int at_x, int at_y){
+		//this function uses the mask to find construct the GridCut problem, calculate the GraphCut, and finally place the patch at the right place just like paste_on
+		if(at_x<0 || at_y<0){
+			printf("at is smaller than 0\n");
+			return false;
+		}
+		if(at_x+patch.w>w || at_y+patch.h>h){
+			//printf("patch goes beyond image! That's okay.\n");
+		}
+		//how big is the rectangular grid to run GridCut on?
+		//location in this image
+		int min_x_i=w*2;
+		int min_y_i=h*2;
+		int max_x_i=0;
+		int max_y_i=0;
+		//go over where the new patch will be
+		for (int x=at_x;x<at_x+patch.w;x++){
+			for (int y=at_y;y<at_y+patch.h;y++){
+		  	if(is_known_overflow(x,y)){
+					if(x<min_x_i)
+						min_x_i=x;
+					if(y<min_y_i)
+						min_y_i=y;
+					if(x>max_x_i)
+						max_x_i=x;
+					if(y>max_y_i)
+						max_y_i=y;
+				}
+			}
+		}
+		//location in patch
+		int min_x_p=min_x_i-at_x;
+		int min_y_p=min_y_i-at_y;
+		
+		//printf("the GridCut grid will be from %d, %d to %d, %d, which is from %d, %d in the patch. ",min_x_i,min_y_i,max_x_i,max_y_i,min_x_p,min_y_p);
+			
+		Grid* grid = new Grid(max_x_i-min_x_i+3,max_y_i-min_y_i+3);//if min_x==max_x, the width is 3, not 0. That's because there are uncuttable pixels on either side to which the one collumn of undecided pixels are attached to
+		//in the grid, the nodes refer to pixels at x+min_x_i-1, y+min_y_i-1
+		for (int x=0;x<max_x_i-min_x_i+3;x++){
+			for (int y=0;y<max_y_i-min_y_i+3;y++){
+				//in area undefined in underlying image
+				if(!is_known_overflow(x+min_x_i-1,y+min_y_i-1))
+						grid->set_terminal_cap(grid->node_id(x,y),0,DBL_MAX);
+				//beyond the edge of the overlapping region
+				if(x==0 || y==0 || x==max_x_i-min_x_i+2 || y==max_y_i-min_y_i+2){
+					//we are either on the underlying image, on the new patch, or on a pixel that won't be set at all
+					if(is_known_overflow(x+min_x_i-1,y+min_y_i-1)){//connect to underlying image
+						grid->set_terminal_cap(grid->node_id(x,y),DBL_MAX,0);
+						//set(x+min_x_i-1,y+min_y_i-1,0,255);
+					}else if(patch.is_known(x+min_x_p-1,y+min_y_p-1)){
+						grid->set_terminal_cap(grid->node_id(x,y),0,DBL_MAX);
+						//set(x+min_x_i-1,y+min_y_i-1,1,255);						
+					}else{
+						//set(x+min_x_i-1,y+min_y_i-1,2,255);
+					}
+				}
+				if(x>0)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,-1,0);
+				if(y>0)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,0,-1);
+				if(x<max_x_i-min_x_i+2)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,+1,0);
+				if(y<max_y_i-min_y_i+2)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,0,+1);
+			}
+		}
+		//initialize those not on the edge only. Many connections are calculated twice, which is wasteful
+		//now, the information needs to be put into the connections of the nodes
 
+		grid->compute_maxflow();
+		double max_flow = fmod(grid->get_flow(),arbitrary_large_constant);
+		
+		//find the length of the cuts by finding how many adjacent values are different
+		int length=0;
+		for (int y=1;y<max_y_i-min_y_i+1;y++){
+			for (int x=1;x<max_x_i-min_x_i+1;x++){
+				if(grid->get_segment(grid->node_id(x,y)) == 1){//delete previous seams on new patch
+					set_cut_cost_overflow(x+min_x_i-1,y+min_y_i-1,-1);
+				}
+				if(grid->get_segment(grid->node_id(x,y)) != grid->get_segment(grid->node_id(x+1,y))){
+					length++;
+					set_cut_cost_overflow(x+min_x_i-1,y+min_y_i-1,get_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,x,y,+1,0));
+				}
+				if(grid->get_segment(grid->node_id(x,y)) != grid->get_segment(grid->node_id(x,y+1))){
+					length++;
+					set_cut_cost_overflow(x+min_x_i-1,y+min_y_i-1,get_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,x,y,0,+1));
+				}
+				if(get_cut_cost_overflow(x+min_x_i-1,y+min_y_i-1)==-1)
+						printf("    ");
+				else
+						printf("%.1f ",get_cut_cost_overflow(x+min_x_i-1,y+min_y_i-1));
+			}
+			printf("|\n");
+		}
+		length=length/2;
+		printf("The used max flow is %f, for a cut of length %d\n",max_flow, length);
+		
+		for (int y=1;y<max_y_i-min_y_i+2;y++){
+			for (int x=1;x<max_x_i-min_x_i+2;x++){
+				if(grid->get_segment(grid->node_id(x,y)) == 0)
+					for (int c=0;c<3;c++)
+						;//set(x+min_x_i-1,y+min_y_i-1,c,255);
+				else
+					for (int c=0;c<3;c++)
+						set_overflow(x+min_x_i-1,y+min_y_i-1,c,patch.get(x+min_x_p-1,y+min_y_p-1,c));
+			}
+		}
+		for (int x=at_x;x<at_x+patch.w;x++)
+			for (int y=at_y;y<at_y+patch.h;y++)
+		  		if(is_known_overflow(x,y)){
+					;
+				}else{
+					for (int c=0;c<3;c++)
+						set_overflow(x,y,c,patch.get(x-at_x,y-at_y,c));
+				}
+
+		return true;
+	}
+	
 	double get_cut_cost(SubImage patch, int at_x, int at_y){
 		//this function uses the mask to find construct the GridCut problem, calculate the GraphCut, and finally place the patch at the right place just like paste_on
 		if(at_x<0 || at_y<0){
@@ -531,13 +700,88 @@ class SubImage {
 		return max_flow;
 	}
 	
+	double get_cut_cost_overflow(SubImage patch, int at_x, int at_y){
+		//this function uses the mask to find construct the GridCut problem, calculate the GraphCut, and finally place the patch at the right place just like paste_on
+		if(at_x<0 || at_y<0){
+			printf("at is smaller than 0\n");
+			return false;
+		}
+		if(at_x+patch.w>w || at_y+patch.h>h){
+			//printf("patch goes beyond image! That's okay.\n");
+		}
+		//how big is the rectangular grid to run GridCut on?
+		//location in this image
+		int min_x_i=w*2;
+		int min_y_i=h*2;
+		int max_x_i=0;
+		int max_y_i=0;
+		//go over where the new patch will be
+		for (int x=at_x;x<at_x+patch.w;x++){
+			for (int y=at_y;y<at_y+patch.h;y++){
+		  	if(is_known_overflow(x,y)){
+					if(x<min_x_i)
+						min_x_i=x;
+					if(y<min_y_i)
+						min_y_i=y;
+					if(x>max_x_i)
+						max_x_i=x;
+					if(y>max_y_i)
+						max_y_i=y;
+				}
+			}
+		}
+		//location in patch
+		int min_x_p=min_x_i-at_x;
+		int min_y_p=min_y_i-at_y;
+		
+		//printf("the GridCut grid will be from %d, %d to %d, %d, which is from %d, %d in the patch. ",min_x_i,min_y_i,max_x_i,max_y_i,min_x_p,min_y_p);
+			
+		Grid* grid = new Grid(max_x_i-min_x_i+3,max_y_i-min_y_i+3);//if min_x==max_x, the width is 3, not 0. That's because there are uncuttable pixels on either side to which the one collumn of undecided pixels are attached to
+		//in the grid, the nodes refer to pixels at x+min_x_i-1, y+min_y_i-1
+		for (int x=0;x<max_x_i-min_x_i+3;x++){
+			for (int y=0;y<max_y_i-min_y_i+3;y++){
+				//in area undefined in underlying image
+				if(!is_known_overflow(x+min_x_i-1,y+min_y_i-1))
+						grid->set_terminal_cap(grid->node_id(x,y),0,DBL_MAX);
+				//beyond the edge of the overlapping region
+				if(x==0 || y==0 || x==max_x_i-min_x_i+2 || y==max_y_i-min_y_i+2){
+					//we are either on the underlying image, on the new patch, or on a pixel that won't be set at all
+					if(is_known_overflow(x+min_x_i-1,y+min_y_i-1)){//connect to underlying image
+						grid->set_terminal_cap(grid->node_id(x,y),DBL_MAX,0);
+						//set(x+min_x_i-1,y+min_y_i-1,0,255);
+					}else if(patch.is_known(x+min_x_p-1,y+min_y_p-1)){
+						grid->set_terminal_cap(grid->node_id(x,y),0,DBL_MAX);
+						//set(x+min_x_i-1,y+min_y_i-1,1,255);						
+					}else{
+						//set(x+min_x_i-1,y+min_y_i-1,2,255);
+					}
+				}
+				if(x>0)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,-1,0);
+				if(y>0)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,0,-1);
+				if(x<max_x_i-min_x_i+2)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,+1,0);
+				if(y<max_y_i-min_y_i+2)
+					connect_grid_nodes(x+min_x_i-1,y+min_y_i-1,patch,x+min_x_p-1,y+min_y_p-1,grid,x,y,0,+1);
+			}
+		}
+		//initialize those not on the edge only. Many connections are calculated twice, which is wasteful
+		//now, the information needs to be put into the connections of the nodes
+
+		grid->compute_maxflow();
+		double max_flow = fmod(grid->get_flow(),arbitrary_large_constant);
+
+		return max_flow;
+	}
+	
 	void connect_grid_nodes(int ix, int iy, SubImage patch, int px, int py, Grid* grid, int gx, int gy, int plus_x, int plus_y){
 		//if ix and ix+plus_x are known, and px and px+plus_x are known, and the same is true for y, then calculate matching_quality_cost
 		grid->set_neighbor_cap(grid->node_id(gx,gy),plus_x,plus_y, get_grid_nodes(ix, iy, patch, px, py, gx, gy, plus_x, plus_y));
 	}
 	
 	double get_grid_nodes(int ix, int iy, SubImage patch, int px, int py, int gx, int gy, int plus_x, int plus_y){
-		if(is_known(ix,iy) && is_known(ix+plus_x,iy+plus_y) && patch.is_known(px,py) && patch.is_known(px+plus_x,py+plus_y)){//all points are known
+		if(is_known_overflow(ix,iy) && is_known_overflow(ix+plus_x,iy+plus_y) && patch.is_known_overflow(px,py) && patch.is_known_overflow(px+plus_x,py+plus_y)){//all points are known
 			return matching_quality_cost(ix,iy,patch,px,py)+matching_quality_cost(ix+plus_x,iy+plus_y,patch,px+plus_x,py+plus_y);
 		}else{
 			return arbitrary_large_constant;
@@ -555,9 +799,9 @@ class SubImage {
 	}
 	
 	double matching_quality_cost(int ix, int iy, SubImage patch, int px, int py){
-		double R=get(ix,iy,0);
-		double G=get(ix,iy,1);
-		double B=get(ix,iy,2);
+		double R=get_overflow(ix,iy,0);
+		double G=get_overflow(ix,iy,1);
+		double B=get_overflow(ix,iy,2);
 		double x = 0.4124564*R + 0.3575761*G + 0.1804375*B;
 		double y = 0.2126729*R + 0.7151522*G + 0.0721750*B;
 		double z = 0.0193339*R + 0.1191920*G + 0.9503041*B;
@@ -566,9 +810,9 @@ class SubImage {
 		double a1 = 500.0 * (cielab_ab(x/0.9505) - cielab_ab(whitediv));
 		double b1 = 200.0 * (cielab_ab(whitediv) - cielab_ab(z/1.0890));
 
-		R=patch.get(px,py,0);
-		G=patch.get(px,py,1);
-		B=patch.get(px,py,2);
+		R=patch.get_overflow(px,py,0);
+		G=patch.get_overflow(px,py,1);
+		B=patch.get_overflow(px,py,2);
 		x = 0.4124564*R + 0.3575761*G + 0.1804375*B;
 		y = 0.2126729*R + 0.7151522*G + 0.0721750*B;
 		z = 0.0193339*R + 0.1191920*G + 0.9503041*B;
@@ -587,6 +831,16 @@ class SubImage {
 	bool save(const char* loc){
 		printf("saving to %s\n",loc);
 		(*image).save(loc);
+		return true;
+	}
+	bool save_cut_map(const char* loc){
+		printf("saving cut map to %s\n",loc);
+		CImg<unsigned char> real_image = CImg<unsigned char>(w,h,1,3,0);
+		for (int x=0;x<w;x++)
+			for (int y=0;y<h;y++)
+				for (int c=0;c<3;c++)
+					real_image(x,y,c)=get_cut_cost(x,y)==-1?0:get_cut_cost(x,y)*100;
+		real_image.save(loc);
 		return true;
 	}
 };
@@ -627,9 +881,10 @@ int main(int argc, char **argv)
 		tile.fit_on(rect2,rand()%(out_size-rect_size),rand()%(out_size-rect_size));
 	}*/
 	
-	tile.render_repeatable_texture(&image,rect_size,0,20,10);
+	tile.render_repeatable_texture(&image,rect_size,0,25,10);
 	
 	tile.save("output.png");
+	tile.save_cut_map("output_map.png");
 
 	/*SubImage corner_test(62,62);
 	corner_test.paste_on(rect,0,0);
