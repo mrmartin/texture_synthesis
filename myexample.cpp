@@ -17,6 +17,8 @@ int main(int argc, char **argv)
 	unsigned short w,h;
 	CImg<unsigned char> image(argv[1]);
 	SubImage whole(&image);//creates reference to entire image
+	SubImage copy = SubImage(whole);
+	//return 0;
 	int width=image.width();
 	int height=image.height();
 	//whole.print();
@@ -27,13 +29,13 @@ int main(int argc, char **argv)
 	SubImage right(&image,width/2,0,width,height);//creates reference to subimage
 	//right.print();
 	
-	int out_size=256;
+	int out_size=2500;
 	//make a canvas for the Image Quilting result
 	SubImage tile(out_size,out_size);
 	//tile.print();
 	
 	//put a random rectangle in the middle of the canvas
-	int rect_size=60;
+	int rect_size=64;
 	//tile.paste_on(rect,0,0);
 		
 	//the first patch doesn't care about anything.
@@ -45,7 +47,7 @@ int main(int argc, char **argv)
 		tile.fit_on(rect2,rand()%(out_size-rect_size),rand()%(out_size-rect_size));
 	}*/
 	
-	tile.render_repeatable_texture(&image,rect_size,0,5000,5);
+	tile.render_repeatable_texture(&image,rect_size,0,1500,5);
 	
 	tile.save("output.png");
 	tile.save_cut_map("output_map.png");

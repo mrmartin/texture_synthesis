@@ -27,6 +27,44 @@ class SubImage {
 			CImg<unsigned char> * image;
 			bool * known_mask;
 			double * cut_cost_mask;
+
+	/*//copy constructor is called by all the functions the object is sent to
+	SubImage(const SubImage & rhs)
+	{
+		//printf("rhs w:%d, this w:%d\n",rhs.w,this->w);
+		real_image = rhs.real_image;
+		image=rhs.image;
+		x1=rhs.x1;
+		y1=rhs.y1;
+		x2=rhs.x2;
+		y2=rhs.y2;
+		w=rhs.w;
+		h=rhs.h;
+		known_mask = new bool[w*h];
+		cut_cost_mask = new double[w*h];
+		for (int x=0;x<w;x++)
+			for (int y=0;y<h;y++){
+				known_mask[x*h+y]=rhs.known_mask[x*h+y];
+				cut_cost_mask[x*h+y]=rhs.cut_cost_mask[x*h+y];
+			}
+		printf("called copy constructor\n");		
+	}
+
+	//destructor: delete refered-too arrays as well, called at the end of all functions the object was in
+	~SubImage()
+	{
+		printf("destructor called, w:%d, h:%d\n",w,h);
+		//printf("destroying known_mask:\n");
+		delete [] known_mask;
+		//printf("destroying cut_cost_mask:\n");
+		delete [] cut_cost_mask;
+	}*/
+	void delete_arrays(){
+		//printf("destroying known_mask:\n");
+		delete [] known_mask;
+		//printf("destroying cut_cost_mask:\n");
+		delete [] cut_cost_mask;
+	}
 	//make subImage in a known image a random square, without overflowing over borders		
 	SubImage(CImg<unsigned char> * passed_image, int rect_size)
 	{
@@ -169,33 +207,33 @@ class SubImage {
 			printf("patch image is smaller than patch");
 			return false;
 		}	
-		SubImage patch(passed_image,patch_size);
+		//SubImage patch(passed_image,patch_size);
 		//is patch size less than this image?
-		if(patch.w>w || patch.h>h){
+		if(patch_size>w || patch_size>h){
 			printf("patch size is more than image size in render_texture\n");
 			return false;
 		}
 		//is overlap more than patch size?
-		if(patch.w<=overlap || patch.h<=overlap){
+		if(patch_size<=overlap || patch_size<=overlap){
 			printf("overlap is more or equal to patch size\n");
 			return false;
 		}
 		printf("repeatable texture rendering will have overlap %d, but the overlap over the edge will be different!\n",overlap);
 		//it was actually much easier to do it properly with the overlaps, than it was to fix the bugs of the other method
 		//for each collumn
-		for (int y=0;y<h;y+=patch.h-overlap){
+		for (int y=0;y<h;y+=patch_size-overlap){
 			int y_offset=0;
-			if(y+patch.h>h+overlap)
-				y_offset=-y-patch.h+h+overlap;
+			if(y+patch_size>h+overlap)
+				y_offset=-y-patch_size+h+overlap;
 			//for each row, place patches
-			for (int x=0;x<w;x+=patch.w-overlap){
+			for (int x=0;x<w;x+=patch_size-overlap){
 				//printf("%d, ",x);
 				//will the patch overlap?
 				int x_offset=0;
-				if(x+patch.w>w+overlap)
-					x_offset=-x-patch.w+w+overlap;
+				if(x+patch_size>w+overlap)
+					x_offset=-x-patch_size+w+overlap;
 
-				patch = SubImage(passed_image,patch_size);
+				SubImage patch = SubImage(passed_image,patch_size);
 				SubImage best_patch = patch;
 				double best_cost=DBL_MAX;
 				double this_cost=get_cut_cost_overflow(patch,x+x_offset,y+y_offset);
@@ -204,9 +242,11 @@ class SubImage {
 				while(best_cost>cutoff_cost && counter>0){
 					counter--;
 					if(best_cost>this_cost){
+						//best_patch.delete_arrays();
 						best_patch = patch;
 						best_cost = this_cost;
 					}else{
+						patch.delete_arrays();//doesn't fix memory leak, but reduces it for high max_itterations
 						patch = SubImage(passed_image,patch_size);
 						this_cost=get_cut_cost_overflow(patch,x+x_offset,y+y_offset);
 					}
@@ -214,7 +254,8 @@ class SubImage {
 				printf("best flow is %f\n",best_cost);
 					
 				fit_on_overflow(best_patch,x+x_offset,y+y_offset);
-				
+				//best_patch.delete_arrays();
+				//patch.delete_arrays();
 				save("output.png");
 				//system("read");
 			}
@@ -484,6 +525,7 @@ class SubImage {
 
 		grid->compute_maxflow();
 		double max_flow = fmod(grid->get_flow(),arbitrary_large_constant);
+		delete grid;
 		return max_flow;
 	}
 	//using graphcut and a gaussian bell function multiplying the weights, make a round cut to replace the center of the underlying image with the patch
@@ -569,6 +611,7 @@ class SubImage {
 						set_overflow(x+min_x_i-1,y+min_y_i-1,c,patch.get(x+min_x_p-1,y+min_y_p-1,c));
 			}
 		}
+		delete grid;
 		return true;
 	}
 
@@ -688,6 +731,7 @@ class SubImage {
 						set(x,y,c,patch.get(x-at_x,y-at_y,c));
 				}
 
+		delete grid;
 		return true;
 	}
 	
@@ -807,6 +851,7 @@ class SubImage {
 						set_overflow(x,y,c,patch.get(x-at_x,y-at_y,c));
 				}
 
+		delete grid;
 		return true;
 	}
 	
@@ -882,6 +927,7 @@ class SubImage {
 
 		grid->compute_maxflow();
 		double max_flow = fmod(grid->get_flow(),arbitrary_large_constant);
+		delete grid;
 		return max_flow;
 	}
 	
@@ -957,6 +1003,7 @@ class SubImage {
 		grid->compute_maxflow();
 		double max_flow = fmod(grid->get_flow(),arbitrary_large_constant);
 
+		delete grid;
 		return max_flow;
 	}
 	

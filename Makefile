@@ -7,12 +7,12 @@ ifeq ($(UNAME_S),Darwin)
 endif
 	
 test: myexample.bin
-	./myexample.bin cohen03_in.jpg #~/Datasets/Textures/numbers.jpg
+	./myexample.bin cohen03_in.jpg output.jpg #~/Datasets/Textures/numbers.jpg
 
 render: myexample.bin
-	./myexample.bin yellow-peppers256.o.jpg yellow-peppers-output.jpg #~/Datasets/Textures/numbers.jpg
-	./myexample.bin olives256.o.jpg olives-output.jpg
-	
+	./myexample.bin apples.jpg apples-output.jpg #~/Datasets/Textures/numbers.jpg
+	./myexample.bin weave.jpg weave-output.jpg
+	./myexample.bin emperador_input.jpg emperador-output.jpg
 	
 myexample.bin: myexample.cpp CImg GridCut SubImage.cpp
 	g++ myexample.cpp -o myexample.bin $(CCFLAGS) -I./GridCut/include -I.
