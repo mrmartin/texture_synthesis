@@ -29,13 +29,13 @@ int main(int argc, char **argv)
 	SubImage right(&image,width/2,0,width,height);//creates reference to subimage
 	//right.print();
 	
-	int out_size=2500;
+	int out_size=250;
 	//make a canvas for the Image Quilting result
 	SubImage tile(out_size,out_size);
 	//tile.print();
 	
 	//put a random rectangle in the middle of the canvas
-	int rect_size=64;
+	int rect_size=60;
 	//tile.paste_on(rect,0,0);
 		
 	//the first patch doesn't care about anything.
@@ -47,7 +47,7 @@ int main(int argc, char **argv)
 		tile.fit_on(rect2,rand()%(out_size-rect_size),rand()%(out_size-rect_size));
 	}*/
 	
-	tile.render_repeatable_texture(&image,rect_size,0,1500,5);
+	tile.render_repeatable_texture(&image,rect_size,0,150,5);
 	
 	tile.save("output.png");
 	tile.save_cut_map("output_map.png");

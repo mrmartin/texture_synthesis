@@ -9,10 +9,17 @@ endif
 test: myexample.bin
 	./myexample.bin cohen03_in.jpg output.jpg #~/Datasets/Textures/numbers.jpg
 
-render: myexample.bin
-	./myexample.bin apples.jpg apples-output.jpg #~/Datasets/Textures/numbers.jpg
-	./myexample.bin weave.jpg weave-output.jpg
-	./myexample.bin emperador_input.jpg emperador-output.jpg
+render: render_repeatable_tile.bin
+	./render_repeatable_tile.bin cohen03_in.jpg output_repeatable_tile.png
+	
+patches: output_repeatable_tile.png render_interchangeable_patches.bin
+	./render_interchangeable_patches.bin cohen03_in.jpg output_repeatable_tile.png patch.png patch_known_map.png
+	
+render_repeatable_tile.bin: render_repeatable_tile.cpp CImg GridCut SubImage.cpp
+	g++ render_repeatable_tile.cpp -o render_repeatable_tile.bin $(CCFLAGS) -I./GridCut/include -I.
+	
+render_interchangeable_patches.bin: render_interchangeable_patches.cpp CImg GridCut SubImage.cpp
+	g++ render_interchangeable_patches.cpp -o render_interchangeable_patches.bin $(CCFLAGS) -I./GridCut/include -I.
 	
 myexample.bin: myexample.cpp CImg GridCut SubImage.cpp
 	g++ myexample.cpp -o myexample.bin $(CCFLAGS) -I./GridCut/include -I.

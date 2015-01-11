@@ -27,6 +27,7 @@ class SubImage {
 			CImg<unsigned char> * image;
 			bool * known_mask;
 			double * cut_cost_mask;
+			double patch_cut_cost;
 
 	/*//copy constructor is called by all the functions the object is sent to
 	SubImage(const SubImage & rhs)
@@ -65,6 +66,8 @@ class SubImage {
 		//printf("destroying cut_cost_mask:\n");
 		delete [] cut_cost_mask;
 	}
+	//only used for array declaration
+	SubImage(){}
 	//make subImage in a known image a random square, without overflowing over borders		
 	SubImage(CImg<unsigned char> * passed_image, int rect_size)
 	{
@@ -186,10 +189,9 @@ class SubImage {
 			}
 		}
 	}
-
+	
 	//this function creates a texture such that the left matches the right and the top matches the bottom
-	bool render_repeatable_texture(CImg<unsigned char> * passed_image, int patch_size, int overlap, int max_itterations, double cutoff_cost)
-	{
+	bool render_repeatable_texture(CImg<unsigned char> * passed_image, int patch_size, int overlap, int max_itterations, double cutoff_cost){
 		//automatically make a good estimate for overlap, such that it works over the edges
 		if(overlap==0){
 			//assume that the width equals the height
@@ -246,7 +248,7 @@ class SubImage {
 						best_patch = patch;
 						best_cost = this_cost;
 					}else{
-						patch.delete_arrays();//doesn't fix memory leak, but reduces it for high max_itterations
+						patch.delete_arrays();//fixes memory leak
 						patch = SubImage(passed_image,patch_size);
 						this_cost=get_cut_cost_overflow(patch,x+x_offset,y+y_offset);
 					}
@@ -254,14 +256,13 @@ class SubImage {
 				printf("best flow is %f\n",best_cost);
 					
 				fit_on_overflow(best_patch,x+x_offset,y+y_offset);
-				//best_patch.delete_arrays();
+				best_patch.delete_arrays();
 				//patch.delete_arrays();
 				save("output.png");
 				//system("read");
 			}
 		}
 	}
-	
 	bool is_known(int x, int y){
 		if(x<0 || y<0 || x>=w || y>=h){
 			//printf("checking known array at %d, %d for subImage of size %d, %d\n",x,y,w,h);
@@ -305,7 +306,6 @@ class SubImage {
 			return true;
 		}
 	}
-	
 	unsigned char get(int x, int y, int c){
 		if(x<0 || x>=w || y<0 || y>=h || c<0 || c>2){
 			printf("in get, getting information outside of SubImage (x:%d, y:%d, w:%d, h:%d, c:%d)! ",x,y,w,h,c);
@@ -528,11 +528,111 @@ class SubImage {
 		delete grid;
 		return max_flow;
 	}
+	
+	//by assuming the texture is repeatable but the patch_source isn't, solve gridcut for the entire patch_source, with different size factors for the gaussian bell in the middle. We also set the offset in the repeatable texture
+	SubImage get_random_patch(SubImage patch_source, double size_factor, int min_x_t, int min_y_t){
+		//this SubImage is the underlying repeatable texture, ok?
+		//offset in texture is given by min_x_t and min_y_t, and offset in patch_source is 0,0		
+		
+		//sigma squared depends on the size of the patch -> will change this once it works
+		double sigma_squared = size_factor*pow(sqrt((double)patch_source.w)/5,2);
+		
+		Grid* grid = new Grid(patch_source.w+2,patch_source.h+2);//if image size is 3, the width is 5, not 3. That's because there are uncuttable pixels on either side to which the collumns of undecided pixels are attached to
+		//middle pixel is sink
+		grid->set_terminal_cap(grid->node_id((patch_source.w+2)/2,(patch_source.h+2)/2),0,DBL_MAX);
+		
+		//in the grid, the nodes refer to pixels at x+min_x_i-1, y+min_y_i-1
+		for (int x=0;x<patch_source.w+2;x++){
+			for (int y=0;y<patch_source.h+2;y++){
+				//beyond the edge of the patch_source image
+				if(x==0 || y==0 || x==patch_source.w+1 || y==patch_source.h+1){
+					grid->set_terminal_cap(grid->node_id(x,y),DBL_MAX,0);
+				}
+				//initialize those not on the edge only. All connections are calculated twice, which is wasteful
+				if(x>0)
+					connect_grid_nodes(min_x_t+x-1,min_y_t+y-1,patch_source,x-1,y-1,grid,x,y,-1,0,(patch_source.w+2)/2-x,(patch_source.h+2)/2-y,sigma_squared);
+				if(y>0)
+					connect_grid_nodes(min_x_t+x-1,min_y_t+y-1,patch_source,x-1,y-1,grid,x,y,0,-1,(patch_source.w+2)/2-x,(patch_source.h+2)/2-y,sigma_squared);
+				if(x<patch_source.w+1)
+					connect_grid_nodes(min_x_t+x-1,min_y_t+y-1,patch_source,x-1,y-1,grid,x,y,+1,0,(patch_source.w+2)/2-x-1,(patch_source.h+2)/2-y,sigma_squared);
+				if(y<patch_source.h+1)
+					connect_grid_nodes(min_x_t+x-1,min_y_t+y-1,patch_source,x-1,y-1,grid,x,y,0,+1,(patch_source.w+2)/2-x,(patch_source.h+2)/2-y-1,sigma_squared);
+			}
+		}
+		grid->compute_maxflow();
+		double max_flow = grid->get_flow();
+		//printf("max flow is %f\n",max_flow);
+		
+		//find the length of the cuts by finding how many adjacent values are different
+		int length=0;
+		int min_x_p=patch_source.w;
+		int min_y_p=patch_source.h;
+		int max_x_p=0;
+		int max_y_p=0;
+		for (int y=1;y<patch_source.w+1;y++){
+			for (int x=1;x<patch_source.h+1;x++){
+				if(grid->get_segment(grid->node_id(x,y))==1){
+					if(x<min_x_p)
+						min_x_p=x;
+					if(x>max_x_p)
+						max_x_p=x;
+					if(y<min_y_p)
+						min_y_p=y;
+					if(y>max_y_p)
+						max_y_p=y;
+				}
+			}
+		}
+		
+		for (int y=min_y_p;y<=max_y_p;y++){
+			for (int x=min_x_p;x<=max_x_p;x++){
+				double cut_cost=0;
+				if(grid->get_segment(grid->node_id(x,y)) != grid->get_segment(grid->node_id(x+1,y))){
+					length++;
+					cut_cost+=get_grid_nodes(min_x_t+x-1,min_y_t+y-1,patch_source,x-1,y-1,x,y,0,+1);
+				}
+				if(grid->get_segment(grid->node_id(x,y)) != grid->get_segment(grid->node_id(x,y+1))){
+					length++;
+					cut_cost+=get_grid_nodes(min_x_t+x-1,min_y_t+y-1,patch_source,x-1,y-1,x,y,0,+1);
+				}
+				if(cut_cost==0)
+						printf("    ");
+				else
+						printf("%.1f ",cut_cost);
+			}
+			printf("|\n");
+		}
+		
+		//SubImage patch(patch_source.image, min_x_p, max_x_p , min_y_p, max_y_p);
+		SubImage patch(max_x_p-min_x_p+1,max_y_p-min_y_p+1);
+		patch.patch_cut_cost=max_flow;
+		//these are the coordinates of the patch in the patch_source texture:
+
+		for (int y=min_y_p;y<=max_y_p;y++){
+			for (int x=min_x_p;x<=max_x_p;x++){
+				if(grid->get_segment(grid->node_id(x,y)) == 1)
+					for (int c=0;c<3;c++)
+						patch.set(x-min_x_p,y-min_y_p,c,patch_source.get(x,y,c));
+//				else
+	//				for (int c=0;c<3;c++)
+		//				set_overflow(x+min_x_i-1,y+min_y_i-1,c,patch.get(x+min_x_p-1,y+min_y_p-1,c));
+			}
+		}
+		delete grid;
+		
+		patch.x1=min_x_p;
+		patch.y1=min_y_p;
+		patch.y1=max_x_p;
+		patch.y2=max_y_p;
+		
+		return patch;
+	}
+
 	//using graphcut and a gaussian bell function multiplying the weights, make a round cut to replace the center of the underlying image with the patch
 	bool fit_onto_overflow(SubImage patch, int at_x, int at_y){
 		if(at_x<0 || at_y<0){
 			printf("at is smaller than 0\n");
-			return false;			
+			return false;
 		}
 		if(at_x+patch.w>w || at_y+patch.h>h){
 			printf("patch goes beyond image, but that's okay\n");
@@ -1078,6 +1178,16 @@ class SubImage {
 			for (int y=0;y<h;y++)
 				for (int c=0;c<3;c++)
 					real_image(x,y,c)=get_cut_cost(x,y)==-1?0:get_cut_cost(x,y)*100;
+		real_image.save(loc);
+		return true;
+	}
+	bool save_known_map(const char* loc){
+		printf("saving known map to %s\n",loc);
+		CImg<unsigned char> real_image = CImg<unsigned char>(w,h,1,3,0);
+		for (int x=0;x<w;x++)
+			for (int y=0;y<h;y++)
+				for (int c=0;c<3;c++)
+					real_image(x,y,c)=is_known(x,y)?255:0;
 		real_image.save(loc);
 		return true;
 	}
